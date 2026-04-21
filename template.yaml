@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Serverless AI Maintenance Agent infrastructure
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agentic-prop-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::property-images-ai-agent-${AWS::AccountId}-${AWS::Region}/*
+      Tags:
+        - Key: Project
+          Value: Agentic-Prop
+        - Key: Owner
+          Value: Mpho
+        - Key: Environment
+          Value: Dev
+
+  AgenticMaintenanceFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
+    Properties:
+      FunctionName: agentic-maintenance-function
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info("Agentic maintenance Lambda executed successfully.")
+              logger.info(event)
+              return {
+                  "statusCode": 200,
+                  "body": json.dumps("Lambda triggered by S3 successfully.")
+              }
+      Tags:
+        - Key: Project
+          Value: Agentic-Prop
+        - Key: Owner
+          Value: Mpho
+        - Key: Environment
+          Value: Dev
+
+  AllowS3InvokeLambda:
+    Type: AWS::Lambda::Permission
+    DependsOn: AgenticMaintenanceFunction
+    Properties:
+      FunctionName: !Ref AgenticMaintenanceFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::property-images-ai-agent-${AWS::AccountId}-${AWS::Region}
+
+  PropertyImagesBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: AllowS3InvokeLambda
+    Properties:
+      BucketName: !Sub property-images-ai-agent-${AWS::AccountId}-${AWS::Region}
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt AgenticMaintenanceFunction.Arn
+      Tags:
+        - Key: Project
+          Value: Agentic-Prop
+        - Key: Owner
+          Value: Mpho
+        - Key: Environment
+          Value: Dev
+
+Outputs:
+  PropertyImagesBucketName:
+    Description: S3 bucket for property image uploads
+    Value: !Ref PropertyImagesBucket
+
+  PropertyImagesBucketArn:
+    Description: ARN of the S3 bucket
+    Value: !Sub arn:aws:s3:::property-images-ai-agent-${AWS::AccountId}-${AWS::Region}
+
+  AgenticMaintenanceFunctionName:
+    Description: Lambda function triggered by S3 uploads
+    Value: !Ref AgenticMaintenanceFunction
+
+  AgenticMaintenanceFunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt AgenticMaintenanceFunction.Arn
+
+  DeploymentRegion:
+    Description: AWS region where the stack is deployed
+    Value: !Ref AWS::Region
